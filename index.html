@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pantry Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --paper: #F3F5EF;
+    --paper-raised: #FFFFFF;
+    --ink: #1F2A22;
+    --ink-soft: #55655A;
+    --line: #DDE3D8;
+    --herb: #4C7A5A;
+    --herb-deep: #345841;
+    --tomato: #C1432E;
+    --tomato-soft: #F3E0DB;
+    --amber: #C98A2C;
+    --amber-soft: #F3E9D6;
+    --herb-soft: #E3EBE0;
+    --gold: #E0A458;
+    --radius-s: 4px;
+    --radius-m: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .display {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  button { font-family: inherit; cursor: pointer; }
+  #app { max-width: 1000px; margin: 0 auto; padding: 0 20px 80px; }
+
+  /* Header */
+  header.top {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 32px 0 20px; border-bottom: 2px solid var(--ink);
+    flex-wrap: wrap; gap: 8px;
+  }
+  header.top .brand { display: flex; align-items: baseline; gap: 12px; }
+  header.top h1 { font-size: 28px; letter-spacing: -0.01em; }
+  header.top .sub { color: var(--ink-soft); font-size: 14px; }
+  header.top .date { color: var(--ink-soft); font-size: 13px; }
+
+  nav.tabs {
+    display: flex; gap: 4px; margin: 20px 0 28px;
+    border-bottom: 1px solid var(--line);
+  }
+  nav.tabs button {
+    background: none; border: none; padding: 10px 4px; margin-right: 24px;
+    font-size: 15px; color: var(--ink-soft); border-bottom: 2px solid transparent;
+    position: relative; top: 1px;
+  }
+  nav.tabs button.active { color: var(--ink); border-bottom-color: var(--herb); font-weight: 500; }
+
+  .view { display: none; }
+  .view.active { display: block; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: none; } }
+
+  /* Stat row */
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; }
+  .stat {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius-m);
+    padding: 16px 18px;
+  }
+  .stat .num { font-family: 'IBM Plex Mono', monospace; font-size: 30px; font-weight: 600; line-height: 1; }
+  .stat .label { color: var(--ink-soft); font-size: 13px; margin-top: 6px; }
+  .stat.fresh .num { color: var(--herb-deep); }
+  .stat.soon .num { color: var(--amber); }
+  .stat.expired .num { color: var(--tomato); }
+
+  .panel {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius-m);
+    padding: 20px; margin-bottom: 20px;
+  }
+  .panel h2 { font-size: 17px; margin-bottom: 14px; }
+  .panel .empty { color: var(--ink-soft); font-size: 14px; padding: 12px 0; }
+
+  /* Expiry list rows, color coded by left border */
+  .food-row {
+    display: flex; align-items: center; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    border-left: 3px solid var(--herb);
+    padding-left: 12px;
+  }
+  .food-row:last-child { border-bottom: none; }
+  .food-row.soon { border-left-color: var(--amber); }
+  .food-row.expired { border-left-color: var(--tomato); }
+  .food-row .name { font-weight: 500; flex: 1; min-width: 120px; }
+  .food-row .meta { color: var(--ink-soft); font-size: 13px; }
+  .food-row .badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 3px 8px;
+    border-radius: 20px; white-space: nowrap;
+  }
+  .food-row.fresh .badge { background: var(--herb-soft); color: var(--herb-deep); }
+  .food-row.soon .badge { background: var(--amber-soft); color: var(--amber); }
+  .food-row.expired .badge { background: var(--tomato-soft); color: var(--tomato); }
+  .food-row .actions { display: flex; gap: 6px; }
+  .icon-btn {
+    background: none; border: 1px solid var(--line); border-radius: var(--radius-s);
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    color: var(--ink-soft);
+  }
+  .icon-btn:hover { border-color: var(--ink-soft); color: var(--ink); }
+
+  /* Inventory table controls */
+  .inv-controls { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .inv-controls input, .inv-controls select {
+    font-family: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--radius-s);
+    background: var(--paper-raised); font-size: 14px; color: var(--ink);
+  }
+  .inv-controls input[type=text] { flex: 1; min-width: 160px; }
+
+  /* Add item / forms */
+  .method-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .method-card {
+    background: var(--paper-raised); border: 1px solid var(--line); border-radius: var(--radius-m);
+    padding: 18px; text-align: left; display: flex; flex-direction: column; gap: 8px;
+  }
+  .method-card:hover { border-color: var(--herb); }
+  .method-card .m-icon { font-size: 22px; }
+  .method-card .m-title { font-weight: 600; font-size: 15px; }
+  .method-card .m-desc { font-size: 12.5px; color: var(--ink-soft); line-height: 1.4; }
+
+  form.item-form { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+  form.item-form .full { grid-column: 1 / -1; }
+  form.item-form label { display: block; font-size: 12.5px; color: var(--ink-soft); margin-bottom: 4px; }
+  form.item-form input, form.item-form select {
+    width: 100%; font-family: inherit; padding: 9px 11px; border: 1px solid var(--line);
+    border-radius: var(--radius-s); font-size: 14px; background: var(--paper-raised); color: var(--ink);
+  }
+  form.item-form input:focus, form.item-form select:focus { outline: 2px solid var(--herb); outline-offset: 1px; }
+
+  .btn {
+    border: none; border-radius: var(--radius-s); padding: 10px 18px; font-size: 14px; font-weight: 500;
+  }
+  .btn-primary { background: var(--herb-deep); color: #fff; }
+  .btn-primary:hover { background: #294731; }
+  .btn-ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
+  .btn-ghost:hover { border-color: var(--ink-soft); }
+  .btn-danger { background: none; border: 1px solid var(--tomato); color: var(--tomato); }
+
+  /* Modal */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(31,42,34,0.55);
+    align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  .modal-backdrop.active { display: flex; }
+  .modal {
+    background: var(--paper-raised); border-radius: var(--radius-m); padding: 22px;
+    width: 100%; max-width: 440px; max-height: 88vh; overflow-y: auto;
+  }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .modal-head h2 { font-size: 17px; }
+  .modal-close { background: none; border: none; font-size: 20px; color: var(--ink-soft); line-height: 1; }
+  video#qr-video, video#img-video { width: 100%; border-radius: var(--radius-s); background: #000; }
+  canvas.hidden-canvas { display: none; }
+  .scan-status { font-size: 13px; color: var(--ink-soft); margin: 10px 0; min-height: 18px; }
+  .scan-status.success { color: var(--herb-deep); }
+  .mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 16px 0; }
+  .mic-btn {
+    width: 68px; height: 68px; border-radius: 50%; border: none; background: var(--herb-deep); color: #fff;
+    font-size: 26px; display: flex; align-items: center; justify-content: center;
+  }
+  .mic-btn.listening { background: var(--tomato); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(193,67,46,0.4);} 70% { box-shadow: 0 0 0 14px rgba(193,67,46,0);} 100% { box-shadow: 0 0 0 0 rgba(193,67,46,0);} }
+  .transcript { font-size: 14px; color: var(--ink); background: var(--paper); border-radius: var(--radius-s); padding: 10px 12px; min-height: 20px; width: 100%; text-align: left; }
+
+  .toast-stack { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 60; max-width: 320px; }
+  .toast {
+    background: var(--ink); color: #fff; padding: 12px 16px; border-radius: var(--radius-s); font-size: 13.5px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.18); border-left: 3px solid var(--tomato);
+  }
+
+  .chart-wrap { max-width: 260px; margin: 0 auto; }
+
+  /* Recipe cards */
+  .recipe-card {
+    border: 1px solid var(--line); border-radius: var(--radius-m); padding: 16px;
+    margin-bottom: 12px; background: var(--paper-raised);
+  }
+  .recipe-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .recipe-head h3 { font-size: 16px; font-weight: 600; font-family: 'Fraunces', serif; }
+  .recipe-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-family: 'IBM Plex Mono', monospace; }
+  .tag.match { background: var(--herb-soft); color: var(--herb-deep); }
+  .tag.partial { background: var(--amber-soft); color: var(--amber); }
+  .tag.expiring { background: var(--tomato-soft); color: var(--tomato); }
+  .recipe-ingredients { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .ing-chip { font-size: 12.5px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--line); }
+  .ing-chip.have { background: var(--herb-soft); color: var(--herb-deep); border-color: transparent; }
+  .ing-chip.missing { color: var(--ink-soft); }
+  .recipe-toggle { background: none; border: none; color: var(--herb-deep); font-size: 13px; padding: 4px 0; font-weight: 500; }
+  .recipe-steps { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 13.5px; color: var(--ink); line-height: 1.7; }
+  .recipe-steps.open { display: block; }
+  .recipe-steps ol { margin: 0; padding-left: 18px; }
+
+  @media (max-width: 640px) {
+    .stat-row { grid-template-columns: 1fr 1fr; }
+    .method-row { grid-template-columns: 1fr; }
+    form.item-form { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Pantry Ledger</h1>
+      <span class="sub">food inventory, kept fresh</span>
+    </div>
+    <span class="date mono" id="today-date"></span>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="inventory">Inventory</button>
+    <button data-tab="recipes">Recipes</button>
+    <button data-tab="add">Add item</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section class="view active" id="view-dashboard">
+    <div class="stat-row">
+      <div class="stat fresh"><div class="num mono" id="stat-total">0</div><div class="label">items in pantry</div></div>
+      <div class="stat soon"><div class="num mono" id="stat-soon">0</div><div class="label">expiring within 3 days</div></div>
+      <div class="stat expired"><div class="num mono" id="stat-expired">0</div><div class="label">already expired</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Needs attention</h2>
+      <div id="attention-list"><div class="empty">Nothing needs attention yet — add items to get started.</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>By category</h2>
+      <div class="chart-wrap"><canvas id="category-chart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section class="view" id="view-inventory">
+    <div class="inv-controls">
+      <input type="text" id="search-input" placeholder="Search items…">
+      <select id="filter-status">
+        <option value="all">All statuses</option>
+        <option value="fresh">Fresh</option>
+        <option value="soon">Expiring soon</option>
+        <option value="expired">Expired</option>
+      </select>
+      <select id="filter-category">
+        <option value="all">All categories</option>
+      </select>
+    </div>
+    <div class="panel">
+      <h2>All items</h2>
+      <div id="inventory-list"><div class="empty">Your pantry is empty. Add your first item to start tracking.</div></div>
+    </div>
+  </section>
+
+  <!-- RECIPES -->
+  <section class="view" id="view-recipes">
+    <div class="inv-controls">
+      <input type="text" id="recipe-search" placeholder="Search recipes…">
+      <select id="recipe-sort">
+        <option value="match">Best match first</option>
+        <option value="expiring">Uses expiring items first</option>
+      </select>
+    </div>
+    <div class="panel">
+      <h2>Recommended for your pantry</h2>
+      <div id="recipe-list"><div class="empty">Add a few items to your inventory to see recipe matches.</div></div>
+    </div>
+  </section>
+
+  <!-- ADD -->
+  <section class="view" id="view-add">
+    <div class="method-row">
+      <button class="method-card" id="open-qr">
+        <span class="m-icon">▦</span>
+        <span class="m-title">Scan a QR code</span>
+        <span class="m-desc">Point your camera at a QR code printed on packaging.</span>
+      </button>
+      <button class="method-card" id="open-image">
+        <span class="m-icon">◱</span>
+        <span class="m-title">Scan a label</span>
+        <span class="m-desc">Photograph a package label — text is read automatically.</span>
+      </button>
+      <button class="method-card" id="open-voice">
+        <span class="m-icon">◉</span>
+        <span class="m-title">Say it out loud</span>
+        <span class="m-desc">"Two liters of milk, expires in 5 days."</span>
+      </button>
+    </div>
+
+    <div class="panel">
+      <h2 id="form-title">Add manually</h2>
+      <form class="item-form" id="item-form">
+        <input type="hidden" id="edit-id">
+        <div class="full">
+          <label for="f-name">Item name</label>
+          <input type="text" id="f-name" required placeholder="e.g. Whole milk">
+        </div>
+        <div>
+          <label for="f-qty">Quantity</label>
+          <input type="number" id="f-qty" min="0" step="0.1" value="1">
+        </div>
+        <div>
+          <label for="f-unit">Unit</label>
+          <select id="f-unit">
+            <option>pcs</option><option>g</option><option>kg</option><option>ml</option><option>l</option><option>pack</option>
+          </select>
+        </div>
+        <div>
+          <label for="f-category">Category</label>
+          <select id="f-category">
+            <option>Dairy</option><option>Produce</option><option>Meat & Fish</option><option>Grains</option>
+            <option>Frozen</option><option>Condiments</option><option>Snacks</option><option>Beverages</option><option>Other</option>
+          </select>
+        </div>
+        <div class="full">
+          <label for="f-expiry">Expiry date</label>
+          <input type="date" id="f-expiry" required>
+        </div>
+        <div class="full" style="display:flex; gap:10px; margin-top:4px;">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Add to pantry</button>
+          <button type="button" class="btn btn-ghost" id="cancel-edit" style="display:none;">Cancel edit</button>
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+
+<!-- QR MODAL -->
+<div class="modal-backdrop" id="modal-qr">
+  <div class="modal">
+    <div class="modal-head"><h2>Scan QR code</h2><button class="modal-close" data-close="modal-qr">&times;</button></div>
+    <video id="qr-video" playsinline muted></video>
+    <canvas class="hidden-canvas" id="qr-canvas"></canvas>
+    <div class="scan-status" id="qr-status">Point the camera at a QR code.</div>
+    <button class="btn btn-ghost" data-close="modal-qr" style="width:100%;">Cancel</button>
+  </div>
+</div>
+
+<!-- IMAGE MODAL -->
+<div class="modal-backdrop" id="modal-image">
+  <div class="modal">
+    <div class="modal-head"><h2>Scan a label</h2><button class="modal-close" data-close="modal-image">&times;</button></div>
+    <video id="img-video" playsinline muted></video>
+    <canvas class="hidden-canvas" id="img-canvas"></canvas>
+    <div class="scan-status" id="img-status">Center the label, then capture.</div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-primary" id="capture-btn" style="flex:1;">Capture &amp; read</button>
+      <label class="btn btn-ghost" style="flex:1; text-align:center;">
+        Upload photo
+        <input type="file" accept="image/*" id="img-upload" style="display:none;">
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- VOICE MODAL -->
+<div class="modal-backdrop" id="modal-voice">
+  <div class="modal">
+    <div class="modal-head"><h2>Say it out loud</h2><button class="modal-close" data-close="modal-voice">&times;</button></div>
+    <div class="mic-wrap">
+      <button class="mic-btn" id="mic-btn">●</button>
+      <div class="transcript mono" id="voice-transcript">Tap the mic and describe the item.</div>
+      <div class="scan-status" id="voice-status">e.g. "Add three apples, expires in six days."</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- state ---------- */
+  let items = [];
+  let editingId = null;
+  let categoryChart = null;
+
+  const STORAGE_KEY = "items";
+
+  /* ---------- helpers ---------- */
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const uid = () => 'it_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+
+  function todayISO(){
+    const d = new Date();
+    return d.toISOString().slice(0,10);
+  }
+
+  function daysUntil(dateStr){
+    const today = new Date(todayISO() + 'T00:00:00');
+    const target = new Date(dateStr + 'T00:00:00');
+    return Math.round((target - today) / 86400000);
+  }
+
+  function statusFor(dateStr){
+    const d = daysUntil(dateStr);
+    if (d < 0) return 'expired';
+    if (d <= 3) return 'soon';
+    return 'fresh';
+  }
+
+  function badgeText(dateStr){
+    const d = daysUntil(dateStr);
+    if (d < 0) return `${Math.abs(d)}d overdue`;
+    if (d === 0) return 'expires today';
+    if (d === 1) return '1 day left';
+    return `${d} days left`;
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function showToast(msg){
+    const stack = $('#toast-stack');
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    stack.appendChild(el);
+    setTimeout(() => { el.style.transition = 'opacity .4s'; el.style.opacity = '0'; setTimeout(()=>el.remove(), 400); }, 4200);
+  }
+
+  /* ---------- storage ---------- */
+  async function loadItems(){
+    try {
+      const res = await window.storage.get(STORAGE_KEY, false);
+      items = res && res.value ? JSON.parse(res.value) : [];
+    } catch (e){
+      items = [];
+    }
+  }
+
+  async function saveItems(){
+    try {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(items), false);
+    } catch (e){
+      console.error('Storage error', e);
+      showToast("Couldn't save — your changes may not persist.");
+    }
+  }
+
+  /* ---------- CRUD ---------- */
+  async function addItem(data){
+    const item = {
+      id: uid(),
+      name: data.name.trim(),
+      quantity: parseFloat(data.quantity) || 1,
+      unit: data.unit || 'pcs',
+      category: data.category || 'Other',
+      expiry: data.expiry,
+      addedDate: todayISO(),
+      source: data.source || 'manual'
+    };
+    items.push(item);
+    await saveItems();
+    renderAll();
+  }
+
+  async function updateItem(id, data){
+    const idx = items.findIndex(i => i.id === id);
+    if (idx === -1) return;
+    items[idx] = { ...items[idx], ...data, quantity: parseFloat(data.quantity) || items[idx].quantity };
+    await saveItems();
+    renderAll();
+  }
+
+  async function deleteItem(id){
+    items = items.filter(i => i.id !== id);
+    await saveItems();
+    renderAll();
+  }
+
+  /* ---------- tabs ---------- */
+  $$('.tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      $$('.view').forEach(v => v.classList.remove('active'));
+      $('#view-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  function goToTab(tab){
+    $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + tab));
+  }
+
+  /* ---------- rendering ---------- */
+  function renderAll(){
+    renderDashboard();
+    renderInventory();
+    populateCategoryFilter();
+    renderRecipes();
+  }
+
+  function renderDashboard(){
+    const total = items.length;
+    const soon = items.filter(i => statusFor(i.expiry) === 'soon').length;
+    const expired = items.filter(i => statusFor(i.expiry) === 'expired').length;
+    $('#stat-total').textContent = total;
+    $('#stat-soon').textContent = soon;
+    $('#stat-expired').textContent = expired;
+
+    const attention = items
+      .filter(i => statusFor(i.expiry) !== 'fresh')
+      .sort((a,b) => daysUntil(a.expiry) - daysUntil(b.expiry));
+
+    const list = $('#attention-list');
+    if (attention.length === 0){
+      list.innerHTML = '<div class="empty">Nothing needs attention — everything in your pantry is fresh.</div>';
+    } else {
+      list.innerHTML = attention.map(rowHtml).join('');
+      attachRowHandlers(list);
+    }
+
+    renderCategoryChart();
+  }
+
+  function rowHtml(item){
+    const status = statusFor(item.expiry);
+    return `
+      <div class="food-row ${status}" data-id="${item.id}">
+        <div class="name">${escapeHtml(item.name)}
+          <div class="meta">${item.quantity} ${escapeHtml(item.unit)} · ${escapeHtml(item.category)}</div>
+        </div>
+        <div class="badge">${badgeText(item.expiry)}</div>
+        <div class="actions">
+          <button class="icon-btn" data-edit="${item.id}" title="Edit">✎</button>
+          <button class="icon-btn" data-delete="${item.id}" title="Delete">✕</button>
+        </div>
+      </div>`;
+  }
+
+  function attachRowHandlers(container){
+    container.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => startEdit(b.dataset.edit)));
+    container.querySelectorAll('[data-delete]').forEach(b => b.addEventListener('click', () => {
+      if (confirm('Remove this item from your pantry?')) deleteItem(b.dataset.delete);
+    }));
+  }
+
+  function populateCategoryFilter(){
+    const sel = $('#filter-category');
+    const current = sel.value;
+    const cats = Array.from(new Set(items.map(i => i.category))).sort();
+    sel.innerHTML = '<option value="all">All categories</option>' + cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    if (cats.includes(current)) sel.value = current;
+  }
+
+  function renderInventory(){
+    const search = ($('#search-input').value || '').toLowerCase();
+    const statusFilter = $('#filter-status').value;
+    const catFilter = $('#filter-category').value;
+
+    let filtered = items.filter(i => {
+      if (search && !i.name.toLowerCase().includes(search)) return false;
+      if (statusFilter !== 'all' && statusFor(i.expiry) !== statusFilter) return false;
+      if (catFilter !== 'all' && i.category !== catFilter) return false;
+      return true;
+    }).sort((a,b) => daysUntil(a.expiry) - daysUntil(b.expiry));
+
+    const list = $('#inventory-list');
+    if (filtered.length === 0){
+      list.innerHTML = `<div class="empty">${items.length === 0 ? 'Your pantry is empty. Add your first item to start tracking.' : 'No items match your filters.'}</div>`;
+    } else {
+      list.innerHTML = filtered.map(rowHtml).join('');
+      attachRowHandlers(list);
+    }
+  }
+
+  ['input','change'].forEach(evt => {
+    $('#search-input').addEventListener(evt, renderInventory);
+    $('#filter-status').addEventListener('change', renderInventory);
+    $('#filter-category').addEventListener('change', renderInventory);
+  });
+
+  function renderCategoryChart(){
+    const canvas = $('#category-chart');
+    if (items.length === 0){
+      if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
+      canvas.style.display = 'none';
+      const wrap = canvas.parentElement;
+      if (!wrap.querySelector('.empty')) {
+        const e = document.createElement('div');
+        e.className = 'empty';
+        e.textContent = 'Add items to see the breakdown.';
+        wrap.appendChild(e);
+      }
+      return;
+    }
+    canvas.style.display = 'block';
+    const existingEmpty = canvas.parentElement.querySelector('.empty');
+    if (existingEmpty) existingEmpty.remove();
+
+    const counts = {};
+    items.forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
+    const labels = Object.keys(counts);
+    const data = Object.values(counts);
+    const palette = ['#4C7A5A','#C98A2C','#C1432E','#345841','#E0A458','#8AA88F','#B0664F','#6B8E7A','#D6B370'];
+
+    if (categoryChart) categoryChart.destroy();
+    categoryChart = new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: labels.map((_,i)=>palette[i % palette.length]), borderWidth: 2, borderColor: '#FFFFFF' }] },
+      options: {
+        plugins: { legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, color: '#55655A', padding: 12 } } },
+        cutout: '60%'
+      }
+    });
+  }
+
+  /* ---------- recipe recommendation ---------- */
+  const RECIPE_DB = [
+    { name: 'Veggie Fried Rice', tags:['quick','vegetarian'],
+      ingredients: ['rice','egg','carrot','onion','garlic','peas','soy sauce'],
+      steps: ['Cook or reheat rice so the grains are dry and separate.','Sauté chopped onion, garlic and carrot in oil for 3–4 minutes.','Push vegetables aside, scramble in the egg, then mix everything together.','Add rice and peas, stir-fry on high heat for 4–5 minutes.','Season with soy sauce and serve hot.'] },
+    { name: 'Tomato Garlic Pasta', tags:['quick','vegetarian'],
+      ingredients: ['pasta','tomato','garlic','onion','olive oil','cheese'],
+      steps: ['Boil pasta in salted water until al dente; reserve a cup of pasta water.','Sauté garlic and onion in olive oil until fragrant.','Add chopped tomatoes and simmer 8–10 minutes into a sauce.','Toss in the pasta with a splash of pasta water, top with grated cheese.'] },
+    { name: 'Classic Scrambled Eggs', tags:['quick','breakfast','vegetarian'],
+      ingredients: ['egg','butter','milk','cheese'],
+      steps: ['Whisk eggs with a splash of milk and a pinch of salt.','Melt butter in a nonstick pan over low heat.','Pour in eggs and stir gently until just set.','Fold in cheese off the heat and serve immediately.'] },
+    { name: 'Chicken & Vegetable Stir-Fry', tags:['quick'],
+      ingredients: ['chicken','carrot','onion','garlic','bell pepper','soy sauce'],
+      steps: ['Slice chicken thin and season lightly.','Stir-fry chicken in a hot pan until browned, then set aside.','Stir-fry carrot, onion, garlic and pepper for 3–4 minutes.','Return chicken to the pan, add soy sauce, toss and serve.'] },
+    { name: 'Creamy Tomato Soup', tags:['comfort','vegetarian'],
+      ingredients: ['tomato','onion','garlic','butter','milk','cheese'],
+      steps: ['Sauté onion and garlic in butter until soft.','Add chopped tomatoes and simmer 15 minutes.','Blend until smooth, then stir in milk over low heat.','Season and top with a little cheese before serving.'] },
+    { name: 'Banana Oat Pancakes', tags:['breakfast','vegetarian'],
+      ingredients: ['banana','egg','oats','milk','butter'],
+      steps: ['Mash the banana and whisk in the egg and milk.','Stir in oats and let the batter sit for 5 minutes.','Cook spoonfuls in a buttered pan, 2 minutes per side.','Serve warm, plain or with honey.'] },
+    { name: 'Potato & Onion Curry', tags:['comfort','vegetarian'],
+      ingredients: ['potato','onion','garlic','tomato','yogurt'],
+      steps: ['Sauté onion and garlic until golden.','Add chopped tomato and cook until soft.','Add cubed potato, a splash of water, and simmer until tender.','Stir in yogurt off the heat and season to taste.'] },
+    { name: 'Spinach & Cheese Omelette', tags:['quick','breakfast','vegetarian'],
+      ingredients: ['egg','spinach','cheese','butter','onion'],
+      steps: ['Wilt spinach and chopped onion in a little butter.','Whisk the eggs and pour over the spinach in the pan.','Cook until mostly set, sprinkle cheese on one half.','Fold and cook 1 more minute before serving.'] },
+    { name: 'Yogurt Fruit Bowl', tags:['quick','breakfast','vegetarian'],
+      ingredients: ['yogurt','banana','apple','honey'],
+      steps: ['Slice the banana and apple.','Spoon yogurt into a bowl and top with the fruit.','Drizzle with honey and serve chilled.'] },
+    { name: 'Grilled Cheese Sandwich', tags:['quick','vegetarian'],
+      ingredients: ['bread','cheese','butter'],
+      steps: ['Butter one side of each bread slice.','Layer cheese between the unbuttered sides.','Grill in a pan on medium heat until golden, flipping once.','Slice and serve hot.'] },
+    { name: 'Garlic Butter Rice', tags:['quick','vegetarian'],
+      ingredients: ['rice','garlic','butter','onion'],
+      steps: ['Melt butter and sauté garlic and onion until fragrant.','Add cooked rice and toss until evenly coated.','Season with salt and pepper and serve warm.'] },
+    { name: 'Chicken Soup', tags:['comfort'],
+      ingredients: ['chicken','carrot','onion','garlic'],
+      steps: ['Sauté onion, garlic and carrot until soft.','Add chicken pieces and enough water to cover.','Simmer 25–30 minutes until chicken is cooked through.','Season to taste and serve hot.'] },
+    { name: 'Apple Cinnamon Oatmeal', tags:['breakfast','vegetarian'],
+      ingredients: ['oats','apple','milk','honey'],
+      steps: ['Simmer oats in milk until thickened, about 5 minutes.','Stir in diced apple and cook 2 more minutes.','Sweeten with honey and serve warm.'] },
+    { name: 'Vegetable Sandwich', tags:['quick','vegetarian'],
+      ingredients: ['bread','tomato','onion','cheese','butter'],
+      steps: ['Butter the bread slices.','Layer sliced tomato, onion and cheese.','Close the sandwich and grill or serve fresh.'] },
+    { name: 'Egg Fried Bread', tags:['quick','breakfast','vegetarian'],
+      ingredients: ['bread','egg','milk','butter'],
+      steps: ['Whisk egg with a splash of milk.','Dip bread slices in the mixture.','Fry in butter until golden on both sides.','Serve warm.'] },
+  ];
+
+  function tokenize(name){
+    return name.toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(Boolean);
+  }
+
+  function matchRecipes(){
+    const fresh = items.filter(i => statusFor(i.expiry) !== 'expired');
+    const pantryTokens = fresh.map(i => ({ tokens: tokenize(i.name), item: i }));
+
+    function findMatch(ingredient){
+      return pantryTokens.find(p => p.tokens.some(t => ingredient.includes(t) || t.includes(ingredient)));
+    }
+
+    return RECIPE_DB.map(recipe => {
+      const matched = [];
+      const missing = [];
+      let usesExpiring = false;
+      recipe.ingredients.forEach(ing => {
+        const found = findMatch(ing);
+        if (found){
+          matched.push({ ingredient: ing, item: found.item });
+          if (statusFor(found.item.expiry) === 'soon') usesExpiring = true;
+        } else {
+          missing.push(ing);
+        }
+      });
+      return {
+        recipe, matched, missing, usesExpiring,
+        score: matched.length / recipe.ingredients.length
+      };
+    }).filter(r => r.matched.length > 0)
+      .sort((a,b) => b.score - a.score || (b.usesExpiring - a.usesExpiring));
+  }
+
+  function renderRecipes(){
+    const search = ($('#recipe-search').value || '').toLowerCase();
+    const sortMode = $('#recipe-sort').value;
+    let results = matchRecipes();
+    if (search) results = results.filter(r => r.recipe.name.toLowerCase().includes(search));
+    if (sortMode === 'expiring') results.sort((a,b) => (b.usesExpiring - a.usesExpiring) || (b.score - a.score));
+
+    const list = $('#recipe-list');
+    if (items.length === 0){
+      list.innerHTML = '<div class="empty">Add a few items to your inventory to see recipe matches.</div>';
+      return;
+    }
+    if (results.length === 0){
+      list.innerHTML = '<div class="empty">No close recipe matches yet — add a few more staple ingredients.</div>';
+      return;
+    }
+
+    list.innerHTML = results.map((r, idx) => {
+      const pct = Math.round(r.score * 100);
+      const tagClass = r.score === 1 ? 'match' : 'partial';
+      const chips = r.recipe.ingredients.map(ing => {
+        const hit = r.matched.find(m => m.ingredient === ing);
+        return `<span class="ing-chip ${hit ? 'have' : 'missing'}">${hit ? '✓ ' : '+ '}${escapeHtml(ing)}</span>`;
+      }).join('');
+      return `
+        <div class="recipe-card">
+          <div class="recipe-head">
+            <div>
+              <h3>${escapeHtml(r.recipe.name)}</h3>
+              <div class="recipe-tags">
+                <span class="tag ${tagClass}">${r.matched.length}/${r.recipe.ingredients.length} ingredients (${pct}%)</span>
+                ${r.usesExpiring ? '<span class="tag expiring">uses expiring items</span>' : ''}
+              </div>
+            </div>
+          </div>
+          <div class="recipe-ingredients">${chips}</div>
+          <button class="recipe-toggle" data-toggle="${idx}">Show steps ▾</button>
+          <div class="recipe-steps" id="steps-${idx}"><ol>${r.recipe.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ol></div>
+        </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const steps = $('#steps-' + btn.dataset.toggle);
+        const open = steps.classList.toggle('open');
+        btn.textContent = open ? 'Hide steps ▴' : 'Show steps ▾';
+      });
+    });
+  }
+
+  $('#recipe-search').addEventListener('input', renderRecipes);
+  $('#recipe-sort').addEventListener('change', renderRecipes);
+
+  /* ---------- form ---------- */
+  const form = $('#item-form');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = {
+      name: $('#f-name').value,
+      quantity: $('#f-qty').value,
+      unit: $('#f-unit').value,
+      category: $('#f-category').value,
+      expiry: $('#f-expiry').value
+    };
+    if (!data.name || !data.expiry) return;
+
+    if (editingId){
+      await updateItem(editingId, data);
+      showToast(`Updated ${data.name}.`);
+      cancelEdit();
+    } else {
+      await addItem(data);
+      showToast(`Added ${data.name} to your pantry.`);
+      form.reset();
+      $('#f-qty').value = 1;
+    }
+    goToTab('inventory');
+  });
+
+  function startEdit(id){
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    editingId = id;
+    $('#f-name').value = item.name;
+    $('#f-qty').value = item.quantity;
+    $('#f-unit').value = item.unit;
+    $('#f-category').value = item.category;
+    $('#f-expiry').value = item.expiry;
+    $('#form-title').textContent = 'Edit item';
+    $('#submit-btn').textContent = 'Save changes';
+    $('#cancel-edit').style.display = 'inline-block';
+    goToTab('add');
+  }
+
+  function cancelEdit(){
+    editingId = null;
+    form.reset();
+    $('#f-qty').value = 1;
+    $('#form-title').textContent = 'Add manually';
+    $('#submit-btn').textContent = 'Add to pantry';
+    $('#cancel-edit').style.display = 'none';
+  }
+  $('#cancel-edit').addEventListener('click', cancelEdit);
+
+  function prefillForm({name, expiry, quantity, category}){
+    if (name) $('#f-name').value = name;
+    if (expiry) $('#f-expiry').value = expiry;
+    if (quantity) $('#f-qty').value = quantity;
+    if (category) $('#f-category').value = category;
+    goToTab('add');
+  }
+
+  /* ---------- modal plumbing ---------- */
+  function openModal(id){ $('#' + id).classList.add('active'); }
+  function closeModal(id){ $('#' + id).classList.remove('active'); }
+  $$('[data-close]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.close;
+    closeModal(id);
+    stopAllStreams();
+  }));
+
+  let activeStream = null;
+  function stopAllStreams(){
+    if (activeStream){
+      activeStream.getTracks().forEach(t => t.stop());
+      activeStream = null;
+    }
+    if (recognition && listening) { recognition.stop(); }
+  }
+
+  /* ---------- QR scanning ---------- */
+  $('#open-qr').addEventListener('click', async () => {
+    openModal('modal-qr');
+    const status = $('#qr-status');
+    status.className = 'scan-status';
+    status.textContent = 'Requesting camera access…';
+    const video = $('#qr-video');
+    const canvas = $('#qr-canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    try {
+      activeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = activeStream;
+      await video.play();
+      status.textContent = 'Point the camera at a QR code.';
+      requestAnimationFrame(scanQrFrame);
+    } catch (err){
+      status.textContent = "Couldn't access the camera. Check your browser permissions.";
+    }
+
+    function scanQrFrame(){
+      if (!$('#modal-qr').classList.contains('active')) return;
+      if (video.readyState === video.HAVE_ENOUGH_DATA){
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = window.jsQR ? jsQR(imageData.data, imageData.width, imageData.height) : null;
+        if (code && code.data){
+          status.className = 'scan-status success';
+          status.textContent = 'Code found: ' + code.data;
+          handleQrPayload(code.data);
+          setTimeout(() => { closeModal('modal-qr'); stopAllStreams(); }, 700);
+          return;
+        }
+      }
+      requestAnimationFrame(scanQrFrame);
+    }
+  });
+
+  function handleQrPayload(raw){
+    // Try JSON payload first: {"name":"Milk","expiry":"2026-09-10","category":"Dairy","quantity":1}
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch(e){ parsed = null; }
+    if (parsed && typeof parsed === 'object'){
+      prefillForm({
+        name: parsed.name || parsed.item || raw,
+        expiry: parsed.expiry || parsed.expiryDate || '',
+        quantity: parsed.quantity,
+        category: parsed.category
+      });
+    } else {
+      // Plain text QR: use as the item name, leave expiry for the user to set
+      prefillForm({ name: raw });
+    }
+    showToast('QR code read — review and save the details.');
+  }
+
+  /* ---------- image / OCR scanning ---------- */
+  $('#open-image').addEventListener('click', async () => {
+    openModal('modal-image');
+    const status = $('#img-status');
+    status.className = 'scan-status';
+    status.textContent = 'Requesting camera access…';
+    const video = $('#img-video');
+    try {
+      activeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = activeStream;
+      await video.play();
+      status.textContent = 'Center the label, then capture.';
+    } catch (err){
+      status.textContent = 'Camera unavailable — you can upload a photo instead.';
+    }
+  });
+
+  $('#capture-btn').addEventListener('click', async () => {
+    const video = $('#img-video');
+    const canvas = $('#img-canvas');
+    if (!video.videoWidth){
+      $('#img-status').textContent = 'No camera feed — try uploading a photo instead.';
+      return;
+    }
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    runOcr(canvas.toDataURL('image/png'));
+  });
+
+  $('#img-upload').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => runOcr(reader.result);
+    reader.readAsDataURL(file);
+  });
+
+  async function runOcr(dataUrl){
+    const status = $('#img-status');
+    status.className = 'scan-status';
+    status.textContent = 'Reading label… this can take a few seconds.';
+    try {
+      const result = await Tesseract.recognize(dataUrl, 'eng');
+      const text = result.data.text || '';
+      status.className = 'scan-status success';
+      status.textContent = 'Label read. Review the details below.';
+      parseLabelText(text);
+      setTimeout(() => { closeModal('modal-image'); stopAllStreams(); }, 900);
+    } catch (err){
+      status.textContent = "Couldn't read that label — try again or enter details manually.";
+    }
+  }
+
+  function parseLabelText(text){
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    // Guess the name: first reasonably long alphabetic line
+    const nameLine = lines.find(l => /[a-zA-Z]{3,}/.test(l) && l.length < 40) || lines[0] || '';
+
+    // Look for a date pattern: 2026-09-10, 09/10/2026, 10-09-2026, etc.
+    const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})|(\d{1,2}\/\d{1,2}\/\d{2,4})|(\d{1,2}-\d{1,2}-\d{2,4})/);
+    let expiry = '';
+    if (dateMatch){
+      const raw = dateMatch[0];
+      const iso = normalizeToISO(raw);
+      if (iso) expiry = iso;
+    }
+    prefillForm({ name: nameLine.replace(/[^a-zA-Z0-9 &'-]/g, '').trim(), expiry });
+    showToast('Text extracted from label — double-check before saving.');
+  }
+
+  function normalizeToISO(raw){
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const sep = raw.includes('/') ? '/' : '-';
+    const parts = raw.split(sep).map(p => p.trim());
+    if (parts.length !== 3) return null;
+    let [a,b,c] = parts;
+    if (c.length === 2) c = '20' + c;
+    // Assume MM/DD/YYYY for slash format, DD-MM-YYYY for dash format
+    let month, day;
+    if (sep === '/'){ month = a; day = b; } else { day = a; month = b; }
+    month = month.padStart(2,'0'); day = day.padStart(2,'0');
+    if (+month > 12 || +day > 31) return null;
+    return `${c}-${month}-${day}`;
+  }
+
+  /* ---------- voice input ---------- */
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let listening = false;
+  if (SpeechRecognition){
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (e) => {
+      let transcript = '';
+      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+      $('#voice-transcript').textContent = transcript;
+      if (e.results[e.results.length - 1].isFinal){
+        parseVoiceTranscript(transcript);
+      }
+    };
+    recognition.onerror = () => {
+      $('#voice-status').textContent = "Didn't catch that — tap the mic to try again.";
+      setListening(false);
+    };
+    recognition.onend = () => setListening(false);
+  }
+
+  function setListening(state){
+    listening = state;
+    $('#mic-btn').classList.toggle('listening', state);
+  }
+
+  $('#open-voice').addEventListener('click', () => {
+    $('#voice-transcript').textContent = 'Tap the mic and describe the item.';
+    $('#voice-status').textContent = 'e.g. "Add three apples, expires in six days."';
+    openModal('modal-voice');
+    if (!SpeechRecognition){
+      $('#voice-status').textContent = 'Voice input is not supported in this browser. Try Chrome on desktop or Android.';
+    }
+  });
+
+  $('#mic-btn').addEventListener('click', () => {
+    if (!recognition) return;
+    if (listening){
+      recognition.stop();
+    } else {
+      $('#voice-transcript').textContent = 'Listening…';
+      recognition.start();
+      setListening(true);
+    }
+  });
+
+  function parseVoiceTranscript(transcript){
+    const lower = transcript.toLowerCase();
+    let quantity = 1;
+    const numWords = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 };
+    const qtyMatch = lower.match(/\b(\d+)\b/);
+    if (qtyMatch) quantity = parseInt(qtyMatch[1]);
+    else {
+      const wordMatch = Object.keys(numWords).find(w => lower.includes(w + ' '));
+      if (wordMatch) quantity = numWords[wordMatch];
+    }
+
+    let expiry = '';
+    const daysMatch = lower.match(/(?:in|within)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+day/);
+    if (daysMatch){
+      let n = parseInt(daysMatch[1]);
+      if (isNaN(n)) n = numWords[daysMatch[1]] || 0;
+      const d = new Date();
+      d.setDate(d.getDate() + n);
+      expiry = d.toISOString().slice(0,10);
+    } else if (lower.includes('today')){
+      expiry = todayISO();
+    } else if (lower.includes('tomorrow')){
+      const d = new Date(); d.setDate(d.getDate()+1); expiry = d.toISOString().slice(0,10);
+    }
+
+    // Strip filler words to guess the item name
+    let name = lower
+      .replace(/^add\s+/, '')
+      .replace(/\b\d+\b/, '')
+      .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/, '')
+      .replace(/(?:,)?\s*(?:it\s+)?expires?\s+(?:in|within)?\s*.*$/, '')
+      .replace(/\b(of|expiring|expires|today|tomorrow)\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+
+    $('#voice-status').textContent = 'Got it — review the details.';
+    setTimeout(() => {
+      closeModal('modal-voice');
+      stopAllStreams();
+      prefillForm({ name: name || transcript, expiry, quantity });
+      showToast('Filled in from voice — double-check before saving.');
+    }, 500);
+  }
+
+  /* ---------- expiry notifications on load ---------- */
+  function notifyOnLoad(){
+    const expired = items.filter(i => statusFor(i.expiry) === 'expired');
+    const soon = items.filter(i => statusFor(i.expiry) === 'soon');
+    if (expired.length) showToast(`${expired.length} item${expired.length > 1 ? 's' : ''} past expiry — check your pantry.`);
+    else if (soon.length) showToast(`${soon.length} item${soon.length > 1 ? 's' : ''} expiring within 3 days.`);
+  }
+
+  /* ---------- init ---------- */
+  async function init(){
+    $('#today-date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    $('#f-expiry').min = todayISO();
+    await loadItems();
+    renderAll();
+    notifyOnLoad();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
